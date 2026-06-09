@@ -25,8 +25,16 @@ export async function POST(req: Request) {
     lock = await getLockState(ipHash);
   } catch (e) {
     // If the rate-limit DB is unreachable, fail-CLOSED — refuse the login.
+    // eslint-disable-next-line no-console
+    console.error('[admin login] MongoDB unreachable:', e);
+    const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json(
-      { error: 'Login temporarily unavailable. Try again later.' },
+      {
+        error:
+          'Login temporarily unavailable — the database is unreachable. ' +
+          'Check MONGODB_URI in environment variables and that the host can reach MongoDB Atlas.',
+        detail: msg
+      },
       { status: 503 }
     );
   }

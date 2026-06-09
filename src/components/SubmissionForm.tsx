@@ -130,9 +130,10 @@ export default function SubmissionForm() {
   function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
     setError(null);
     const picked = Array.from(e.target.files ?? []);
-    const next = [...files];
+    const additions: PickedFile[] = [];
+    let count = files.length;
     for (const f of picked) {
-      if (next.length >= MAX_FILES) {
+      if (count >= MAX_FILES) {
         setError(`Maximum ${MAX_FILES} files allowed.`);
         break;
       }
@@ -140,43 +141,34 @@ export default function SubmissionForm() {
         setError(`${f.name} is bigger than 25 MB.`);
         continue;
       }
-      next.push({
+      additions.push({
         id: `${f.name}-${f.size}-${Math.random().toString(36).slice(2)}`,
         file: f,
         status: 'pending',
         progress: 0
       });
+      count++;
     }
-    setFiles(next);
+    setFiles((prev) => [...prev, ...additions]);
     if (fileInputRef.current) fileInputRef.current.value = '';
 
-    // Kick off uploads for any pending files
-    next.forEach((pf) => {
-      if (pf.status === 'pending') void startUpload(pf.id);
-    });
+    // Kick off uploads — pass the file directly so we don't depend on re-reading state.
+    for (const pf of additions) {
+      void startUpload(pf);
+    }
   }
 
   function updateFile(id: string, patch: Partial<PickedFile>) {
     setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
   }
 
-  async function startUpload(id: string) {
-    const pf = (() => {
-      let found: PickedFile | undefined;
-      setFiles((prev) => {
-        found = prev.find((x) => x.id === id);
-        return prev;
-      });
-      return found;
-    })();
-    if (!pf || pf.status === 'uploading' || pf.status === 'done') return;
-
-    updateFile(id, { status: 'uploading', progress: 0, error: undefined });
+  async function startUpload(pf: PickedFile) {
+    updateFile(pf.id, { status: 'uploading', progress: 0, error: undefined });
     try {
       const result = await uploadToCloudinary(pf.file, (pct) =>
-        updateFile(id, { progress: pct })
+        updateFile(pf.id, { progress: pct })
       );
-      updateFile(id, {
+      updateFile(pf.id, {
         status: 'done',
         progress: 100,
         publicId: result.publicId,
@@ -185,7 +177,7 @@ export default function SubmissionForm() {
         bytes: result.bytes
       });
     } catch (err) {
-      updateFile(id, {
+      updateFile(pf.id, {
         status: 'error',
         error: err instanceof Error ? err.message : 'Upload failed'
       });
@@ -197,7 +189,8 @@ export default function SubmissionForm() {
   }
 
   function retryFile(id: string) {
-    void startUpload(id);
+    const pf = files.find((f) => f.id === id);
+    if (pf) void startUpload(pf);
   }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
